@@ -13,8 +13,6 @@ if [[ "${ROLE}" == 'Master' ]]; then
   hdfs dfs -mkdir hdfs://tfm-m/user/rodrigo_accurso/model
   hdfs dfs -mkdir hdfs://tfm-m/user/rodrigo_accurso/data
   # Copy datasets
-  hdfs dfs -cp gs://tfm_dataset/amazon_reviews_us_Watches_v1_00_red.tsv hdfs://tfm-m/user/rodrigo_accurso/data/amazon_reviews_us_Watches_v1_00_red.tsv
-  hdfs dfs -cp gs://tfm_dataset/amazon_reviews_us_Watches_v1_00_red2.tsv hdfs://tfm-m/user/rodrigo_accurso/data/amazon_reviews_us_Watches_v1_00_red2.tsv
-  hdfs dfs -cp gs://tfm_main/data/amazon_reviews_us_Watches_v1_00.tsv.gz hdfs://tfm-m/user/rodrigo_accurso/data/amazon_reviews_us_Watches_v1_00.tsv.gz
   hdfs dfs -cp gs://tfm_main/data/amazon_reviews_us_PC_v1_00_red.tsv.gz hdfs://tfm-m/user/rodrigo_accurso/data/amazon_reviews_us_PC_v1_00_red.tsv.gz
+  hdfs dfs -cp gs://tfm_main/data/amazon_reviews_us_PC_v1_00.tsv hdfs://tfm-m/user/rodrigo_accurso/data/amazon_reviews_us_PC_v1_00.tsv
 fi
