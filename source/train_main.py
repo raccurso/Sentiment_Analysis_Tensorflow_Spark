@@ -73,7 +73,7 @@ def main_fun(args, ctx):
 					keep_checkpoint_every_n_hours=1)
 	
 	# Create the Keras model and convert it in an estimator
-	keras_model = model.base_model(DICTIONARY_LENGHT, NUM_CLASSES)
+	keras_model = model.get_model(DICTIONARY_LENGHT, NUM_CLASSES)
 	estimator = tf.keras.estimator.model_to_estimator(keras_model, model_dir=args.model_folder, config=run_config)
 		
 	tf_feed = TFNode.DataFeed(ctx.mgr)
@@ -257,7 +257,7 @@ if __name__ == '__main__':
 		num_ps = 1
 		cluster = TFCluster.run(sc, main_fun, args, num_executors, num_ps, args.tensorboard, TFCluster.InputMode.SPARK, 
 								log_dir=args.model_folder, master_node='master', reservation_timeout=60)
-		cluster.train(train_rdd, args.epochs, feed_timeout=240)
+		cluster.train(train_rdd, args.epochs, feed_timeout=2400)
 	
 		print('{} End model training'.format(datetime.now()))
 		cluster.shutdown()

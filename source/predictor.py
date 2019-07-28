@@ -9,11 +9,13 @@ import pyspark
 import nlp_pipeline as nlp
 import argparse
 from datetime import datetime
+import math
 
 # Constants
 NUM_CLASSES = 5
 SAMPLE_LENGHT = 100
 DICTIONARY_LENGHT = 10000
+MAX_PREDICTIONS = 10000
 
 # Load pre-processed data (word indexes) and labels stored in one file
 def load_one_file(file_name):
@@ -39,12 +41,20 @@ def execute_NLP(input_file, dict_file):
 												num_executors, dict_file, None, sc)
 	return df
 
-# Execute predictions with pre-trained model
+# Execute predictions with pre-trained model.
+# Predictions are done in batches of 10.000 in order to avoid an error for the limit of resources
 def predict(model_folder, x):
 	predict_fn = predictor.from_saved_model(model_folder)
-	params = {'features_layer_input': x}
-	predictions = predict_fn(params)
-	return predictions['output_layer']
+	total = math.ceil(x.shape[0] / MAX_PREDICTIONS)
+	all_preds = ()
+	for i in np.arange(total):
+		params = {'features_layer_input': x[i*MAX_PREDICTIONS:(i+1)*MAX_PREDICTIONS]}
+		predictions = predict_fn(params)
+		if len(all_preds) == 0:
+			all_preds = predictions['output_layer']
+		else:
+			all_preds = np.concatenate((all_preds, predictions['output_layer']))	
+	return all_preds
 
 # Calculate and print the accuracy
 def eval(predictions, y):
