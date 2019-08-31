@@ -12,18 +12,17 @@ from datetime import datetime
 import math
 
 # Constants
-NUM_CLASSES = 5
 SAMPLE_LENGHT = 100
 DICTIONARY_LENGHT = 10000
 MAX_PREDICTIONS = 10000
 
 # Load pre-processed data (word indexes) and labels stored in one file
-def load_one_file(file_name):
+def load_one_file(file_name, num_classes):
 	with file_io.FileIO(file_name, 'r') as f:
 		eval = pd.read_csv(f, sep=",", header=0)
     # Split features and labels columns
-	x_eval = eval.iloc[:,:(-1*NUM_CLASSES)].values.astype('float32')
-	y_eval = eval.iloc[:,(-1*NUM_CLASSES):].values.astype('int32')
+	x_eval = eval.iloc[:,:(-1*num_classes)].values.astype('float32')
+	y_eval = eval.iloc[:,(-1*num_classes):].values.astype('int32')
 	return (x_eval, y_eval)
 
 # Load pre-processed data (word indexes)
@@ -33,12 +32,12 @@ def load_csv(file_name):
 	return data
 
 # Execute the NLP pipeline over raw data with PySpark
-def execute_NLP(input_file, dict_file):
+def execute_NLP(input_file, dict_file, num_classes):
 	sc = SparkContext(conf=SparkConf().setAppName("predictor"))
 	executors = sc._conf.get("spark.executor.instances")
 	num_executors = int(executors) if executors is not None else 1
 	(df, dict_none, df_none) = nlp.nlp_pipeline(input_file, SAMPLE_LENGHT, DICTIONARY_LENGHT, 
-												num_executors, dict_file, None, sc)
+												num_executors, dict_file, None, num_classes, sc)
 	return df
 
 # Execute predictions with pre-trained model.
@@ -114,23 +113,24 @@ if __name__ == '__main__':
 	parser.add_argument("--labels_file", help="file with labels for eval", default='')
 	parser.add_argument("--output_file", help="file to store predictions", default='')	
 	parser.add_argument("--dict_file", help="dictionary file", default='')	
+	parser.add_argument("--num_classes", help="number of classes", type=int, default=5)
 	args = parser.parse_args()
 
 	print('{} Loading data'.format(datetime.now()))	
 	if args.mode == 'eval':
 	    # Load pre-processed data (word indexes) and labels
 		if args.labels_file == '':
-			(x, y) = load_one_file(args.input_file)
+			(x, y) = load_one_file(args.input_file, args.num_classes)
 		else:
 			x = load_csv(args.input_file)
 			y = load_csv(args.labels_file)
 	elif args.mode == 'test':
 		# Load raw data and execute the NLP pipeline
-		df = execute_NLP(args.input_file, args.dict_file)
+		df = execute_NLP(args.input_file, args.dict_file, args.num_classes)
 		data = df.toPandas()
 		# Split features and labels columns
-		x = data.iloc[:,:(-1*NUM_CLASSES)].values.astype('float32')
-		y = data.iloc[:,(-1*NUM_CLASSES):].values.astype('int32')			
+		x = data.iloc[:,:(-1*args.num_classes)].values.astype('float32')
+		y = data.iloc[:,(-1*args.num_classes):].values.astype('int32')			
 	elif args.mode == 'pred':
 		# Load raw data and execute the NLP pipeline
 		df = execute_NLP(args.input_file, args.dict_file)

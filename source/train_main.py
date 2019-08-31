@@ -16,11 +16,10 @@ TEST_FILENAME = 'test.tsv'
 DICTIONARY_FILENAME = 'dictionary.json'
 SAMPLE_LENGHT = 100
 DICTIONARY_LENGHT = 10000
-NUM_CLASSES = 5
 SEED = 1234
-TRAIN_SPLIT = 0.8
-EVAL_SPLIT = 0.1
-TEST_SPLIT = 0.1
+TRAIN_SPLIT = 0.9
+EVAL_SPLIT = 0.05
+TEST_SPLIT = 0.05
 
 
 # SessionRunHook to terminate RDD feeding if the training loop exits before the entire RDD is consumed.
@@ -65,15 +64,15 @@ def main_fun(args, ctx):
 	run_config = tf.estimator.RunConfig(
 					model_dir=args.model_folder,
 					tf_random_seed=None,
-					save_summary_steps=10,
-					save_checkpoints_steps=10,
+					save_summary_steps=100,
+					save_checkpoints_steps=100,
 					session_config=None,
-					log_step_count_steps=10,
+					log_step_count_steps=100,
 					keep_checkpoint_max=5,        
 					keep_checkpoint_every_n_hours=1)
 	
 	# Create the Keras model and convert it in an estimator
-	keras_model = model.get_model(DICTIONARY_LENGHT, NUM_CLASSES)
+	keras_model = model.get_model(DICTIONARY_LENGHT, args.num_classes, SAMPLE_LENGHT)
 	estimator = tf.keras.estimator.model_to_estimator(keras_model, model_dir=args.model_folder, config=run_config)
 		
 	tf_feed = TFNode.DataFeed(ctx.mgr)
@@ -85,8 +84,8 @@ def main_fun(args, ctx):
 			batch = tf_feed.next_batch(1)
 			if len(batch) > 0:
 				record = batch[0]
-				data_array = np.array(record).astype('float32')[:(-1*NUM_CLASSES)]
-				labels_array = np.array(record).astype('int32')[(-1*NUM_CLASSES):]				
+				data_array = np.array(record).astype('float32')[:(-1*args.num_classes)]
+				labels_array = np.array(record).astype('int32')[(-1*args.num_classes):]				
 				yield (data_array, labels_array)
 			else:
 				return
@@ -95,7 +94,7 @@ def main_fun(args, ctx):
 	def train_input_fn():
 		ds = tf.data.Dataset.from_generator(rdd_generator,
 											(tf.float32, tf.int32),
-											(tf.TensorShape([SAMPLE_LENGHT]), tf.TensorShape([NUM_CLASSES])))
+											(tf.TensorShape([SAMPLE_LENGHT]), tf.TensorShape([args.num_classes])))
 		ds = ds.batch(args.batch_size)
 		return ds
 		
@@ -119,7 +118,7 @@ def main_fun(args, ctx):
 						serving_input_receiver_fn=tf.estimator.export.build_raw_serving_input_receiver_fn(feature_spec))
 	train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, 
 						max_steps=args.steps, hooks=train_hooks)
-	eval_spec = tf.estimator.EvalSpec(input_fn=eval_input_fn, exporters=exporter, steps=20, 
+	eval_spec = tf.estimator.EvalSpec(input_fn=eval_input_fn, exporters=exporter, steps=100, 
 						throttle_secs=0, start_delay_secs=0)
 	
 	# Train and evaluate model with Tensorflow estimator
@@ -202,13 +201,14 @@ if __name__ == '__main__':
 	parser.add_argument("--steps", help="number of steps for training", type=int, default=100)
 	parser.add_argument("--tensorboard", help="launch tensorboard process", action="store_true")
 	parser.add_argument("--train_sample_fract", help="fraction of train sample for evaluating training accuracy", type=float, default=0)
+	parser.add_argument("--num_classes", help="number of classes", type=int, default=5)
 	args = parser.parse_args()
 	print("{} Parameters: {}".format(datetime.now(), args))
 	
 	if (args.mode == 'all') or (args.mode == 'nlp'):
 		# 'all' or 'nlp' mode. Execute the NLP pipeline in order to process raw data and get the final datasets for training
 		(df, dict_map, test_raw_data) = nlp.nlp_pipeline(args.train_file, SAMPLE_LENGHT, DICTIONARY_LENGHT, 
-														 num_executors, None, TEST_SPLIT, sc)
+														 num_executors, None, TEST_SPLIT, args.num_classes, sc)
 
 		# Split processed dataframe into train and evaluation datasets
 		(train_df, eval_df) = df.randomSplit([TRAIN_SPLIT, EVAL_SPLIT], seed=SEED)
@@ -218,9 +218,9 @@ if __name__ == '__main__':
 		eval_pd = eval_df.toPandas()
 		print('{} Storing eval dataset to GS'.format(datetime.now()))
 		with file_io.FileIO(args.output_folder + EVAL_X_FILENAME, 'w') as f:
-			eval_pd.iloc[:,:(-1*NUM_CLASSES)].to_csv(f, sep=",", header=0, index=False)
+			eval_pd.iloc[:,:(-1*args.num_classes)].to_csv(f, sep=",", header=0, index=False)
 		with file_io.FileIO(args.output_folder + EVAL_Y_FILENAME, 'w') as f:
-			eval_pd.iloc[:,(-1*NUM_CLASSES):].to_csv(f, sep=",", header=0, index=False)
+			eval_pd.iloc[:,(-1*args.num_classes):].to_csv(f, sep=",", header=0, index=False)
 
 		# Store preprocessed training dataset in Hadoop for model tuning
 		print('{} Storing train dataset to Hadoop'.format(datetime.now()))
@@ -257,7 +257,7 @@ if __name__ == '__main__':
 		num_ps = 1
 		cluster = TFCluster.run(sc, main_fun, args, num_executors, num_ps, args.tensorboard, TFCluster.InputMode.SPARK, 
 								log_dir=args.model_folder, master_node='master', reservation_timeout=60)
-		cluster.train(train_rdd, args.epochs, feed_timeout=2400)
+		cluster.train(train_rdd, args.epochs, feed_timeout=4800)
 	
 		print('{} End model training'.format(datetime.now()))
 		cluster.shutdown()

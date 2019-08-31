@@ -21,6 +21,11 @@ label_OHE = {1: [1, 0, 0, 0, 0],
              4: [0, 0, 0, 1, 0],
              5: [0, 0, 0, 0, 1]}
 
+label_OHE_bin = {1: [1, 0],
+                 2: [1, 0],
+                 4: [0, 1],
+                 5: [0, 1]}
+
 # Clean data by removing murkups, urls, emails, etc.			 
 def clean_data(sample):
 	REMOVE_MARKUP = '<[^>]+>'
@@ -97,6 +102,10 @@ def trim_or_pad_samples(sample, sample_lenght):
 				.tolist()
 	return (text, sample[1])
 
+# Normalize the indices
+def normalize(sample, dict_length):
+	norm = np.asarray(sample[0], dtype=np.float32) / dict_length
+	return (norm.tolist(), sample[1])
 
 '''
 Description:
@@ -126,21 +135,25 @@ Details:
   - Pad or trim each samples to max_length elements
   - One hot encoding of labels (star rating)
 '''
-def nlp_pipeline(filename, max_length, dict_length, num_executors, dict_file, test_split, sc):    
+def nlp_pipeline(filename, max_length, dict_length, num_executors, dict_file, test_split, num_classes, sc):    
 	sql = pyspark.SQLContext(sc)
 	# Load csv file with raw samples
 	print('{} Loading input data'.format(datetime.now()))
+	if num_classes == 2:
+		csv_data = sql.read.csv(filename, sep="\t", inferSchema=True, header=True) \
+                            .where('star_rating in (1, 2, 4, 5)')
+	else:
+		csv_data = sql.read.csv(filename, sep="\t", inferSchema=True, header=True) \
+                            .where('star_rating in (1, 2, 3, 4, 5)')
+    
 	if test_split == None:
-		start_data = sql.read.csv(filename, sep="\t", inferSchema=True, header=True)
+		start_data = csv_data
 		test_raw_data = None
 	else:
 		# Take apart test data from the beginning (if needed)
-		(start_data, test_raw_data) = sql.read.csv(filename, sep="\t", inferSchema=True, header=True) \
-										 .randomSplit([1-test_split, test_split], seed=SEED)		
+		(start_data, test_raw_data) = csv_data.randomSplit([1-test_split, test_split], seed=SEED)		
 	
-	raw_data = start_data.repartition(num_executors) \
-						 .rdd \
-						 .cache()
+	raw_data = start_data.rdd.cache()
 	
 	# Create a new RDD with a tuple of text and label
 	data = raw_data.map(lambda sample: (sample.review_body, sample.star_rating))
@@ -172,18 +185,30 @@ def nlp_pipeline(filename, max_length, dict_length, num_executors, dict_file, te
 	
 	# Broadcast the dictionary in order to have it in all workers
 	dict_broad = sc.broadcast(dictionary)
-	
+		
 	# Substitute words with its index
 	print('{} Substituting words with indexes'.format(datetime.now()))
 	index_rdd = lemma_words_rdd.map(lambda sample: replace_word(sample, dict_broad))
+
+	# Remove empty samples
+	print('{} Removing empty samples'.format(datetime.now()))
+	filtered_rdd = index_rdd.filter(lambda sample: np.sum(np.asarray(sample[0], dtype=np.float32)) > 0)
+
+	# Normalize input indexes. Commented because it gets worse
+	#print('{} Normalizing data'.format(datetime.now()))
+	#norm_rdd = filtered_rdd.map(lambda sample: normalize(sample, dict_length))
+	norm_rdd = filtered_rdd
 		
 	# Pad or trim samples in order to have the same lenght.
 	print('{} Padding arrays'.format(datetime.now()))
-	padded_rdd = index_rdd.map(lambda sample: trim_or_pad_samples(sample, max_length))
+	padded_rdd = norm_rdd.map(lambda sample: trim_or_pad_samples(sample, max_length))
 	
 	# One hot encoding of label
 	print('{} One hot encoding labels'.format(datetime.now()))
-	final_rdd = padded_rdd.map(lambda sample: sample[0] + label_OHE[sample[1]])
+	if num_classes == 2:    
+		final_rdd = padded_rdd.map(lambda sample: sample[0] + label_OHE_bin[sample[1]])
+	else:
+		final_rdd = padded_rdd.map(lambda sample: sample[0] + label_OHE[sample[1]])
 	
 	# Convert de RDD to a Dataframe and fills with 0 null values
 	final_df = final_rdd.toDF() \
