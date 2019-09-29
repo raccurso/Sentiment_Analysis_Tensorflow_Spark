@@ -29,6 +29,6 @@ The following pictures show the accuracy obtained in the binary and multiclass c
 
 ![alt text](https://github.com/raccurso/Sentiment_Analysis_Tensorflow_Spark/blob/master/images/Accuracy.jpg)
 
-The training process has been done in Google Cloud Platform, using the Dataproc service. The benchmark results of the training phase using from 6 to 20 instances is shown below.
+The training process has been done in Google Cloud Platform, using the Dataproc service. The benchmark results of the training phase, using from 6 to 20 instances, is shown below.
 
 ![alt text](https://github.com/raccurso/Sentiment_Analysis_Tensorflow_Spark/blob/master/images/Benchmark.jpg)
